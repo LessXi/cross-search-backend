@@ -102,7 +102,7 @@ app.post('/api/register', async (req, res) => {
       args: [userId, email, passwordHash]
     });
 
-    res.json({ success: true, userId, insertResult });
+    res.json({ success: true, userId, email, insertResult });
   } catch (err) {
     console.error('Register error:', err);
     res.status(500).json({ error: '注册失败: ' + err.message });
@@ -119,7 +119,7 @@ app.post('/api/login', async (req, res) => {
     }
 
     const result = await db.execute({
-      sql: 'SELECT id, password_hash FROM users WHERE email = ?',
+      sql: 'SELECT id, email, password_hash FROM users WHERE email = ?',
       args: [email]
     });
 
@@ -134,7 +134,7 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ error: '密码错误' });
     }
 
-    res.json({ success: true, userId: user.id });
+    res.json({ success: true, userId: user.id, email: user.email });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: '登录失败' });
