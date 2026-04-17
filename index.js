@@ -69,6 +69,16 @@ app.get('/api/debug', async (req, res) => {
   }
 });
 
+// Debug: check tables
+app.get('/api/debug/tables', async (req, res) => {
+  try {
+    const tables = await db.execute("SELECT name FROM sqlite_master WHERE type='table'");
+    res.json({ tables: tables.rows });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
 // Register
 app.post('/api/register', async (req, res) => {
   try {
