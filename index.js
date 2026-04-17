@@ -204,45 +204,120 @@ app.delete('/api/bookmarks', async (req, res) => {
   }
 });
 
-// Bing search via SerpAPI
-async function searchViaBing(query, platforms) {
+// SerpAPI search for baidu, google, bing, zhihu
+async function searchViaSerpApi(engine, query) {
   const SERPAPI_KEY = process.env.SERPAPI_KEY;
   if (!SERPAPI_KEY) {
     throw new Error('SERPAPI_KEY not configured');
   }
 
-  const results = [];
-  for (const platform of platforms) {
-    try {
-      const engine = platform === 'bing' ? 'bing' : 'bing';
-      const response = await fetch(`https://serpapi.com/search?q=${encodeURIComponent(query)}&engine=${engine}&api_key=${SERPAPI_KEY}`);
-      const data = await response.json();
-
-      if (data.organic_results) {
-        for (const item of data.organic_results) {
-          results.push({
-            title: item.title || '',
-            url: item.link || '',
-            snippet: item.snippet || '',
-            platform: platform,
-            type: detectContentType(item.link || '', item.title || ''),
-          });
-        }
-      }
-    } catch (err) {
-      console.error(`Bing search error for ${platform}:`, err);
-    }
+  let url;
+  if (engine === 'baidu') {
+    url = `https://serpapi.com/search.json?engine=baidu&q=${encodeURIComponent(query)}&api_key=${SERPAPI_KEY}&num=50`;
+  } else if (engine === 'google') {
+    url = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(query)}&api_key=${SERPAPI_KEY}&num=50&gl=cn&hl=zh-cn`;
+  } else if (engine === 'bing') {
+    url = `https://serpapi.com/search.json?engine=bing&q=${encodeURIComponent(query)}&api_key=${SERPAPI_KEY}&num=50`;
+  } else {
+    return [];
   }
-  return results;
+
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (!data.organic_results) return [];
+
+    return data.organic_results.map(item => {
+      const itemUrl = item.link || '';
+      const detectedPlatform = detectPlatformFromUrl(itemUrl);
+
+      const result = {
+        platform: detectedPlatform !== 'website' ? detectedPlatform : engine,
+        title: item.title || '无标题',
+        description: item.snippet || '暂无描述',
+        author: item.displayed_link || item.source || `${engine}搜索`,
+        cover: '/placeholder.svg',
+        url: itemUrl,
+        contentType: detectContentType(itemUrl, item.title || ''),
+      };
+
+      // 知乎使用Google site搜索，结果URL需要标记为zhihu
+      if (engine === 'google' && itemUrl.includes('zhihu.com')) {
+        result.platform = 'zhihu';
+        result.contentType = detectContentType(itemUrl, item.title || '');
+      }
+
+      return result;
+    });
+  } catch (err) {
+    console.error(`SerpApi ${engine} error:`, err);
+    return [];
+  }
+}
+
+// Bilibili direct API search
+async function searchBilibili(query) {
+  try {
+    const encodedQuery = encodeURIComponent(query);
+    const url = `https://api.bilibili.com/x/web-interface/search/type?search_type=video&keyword=${encodedQuery}&page=1&page_size=100`;
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://www.bilibili.com',
+      },
+    });
+
+    const data = await response.json();
+    if (data.code !== 0 || !data.data?.result) return [];
+
+    const parseCount = (val) => {
+      if (val === undefined) return undefined;
+      if (typeof val === 'number') return val;
+      const str = String(val);
+      if (str.includes('万')) return Math.floor(parseFloat(str) * 10000);
+      if (str.includes('亿')) return Math.floor(parseFloat(str) * 100000000);
+      return parseInt(str) || undefined;
+    };
+
+    return data.data.result.map(item => ({
+      platform: 'bilibili',
+      title: (item.title || '').replace(/<[^>]*>/g, ''),
+      description: item.description || '暂无简介',
+      author: item.author || '未知UP主',
+      cover: (item.pic || '').startsWith('//') ? `https:${item.pic}` : (item.pic || '/placeholder.svg'),
+      url: item.arcurl || `https://www.bilibili.com/video/${item.bvid}`,
+      publishTime: item.pubdate ? new Date(item.pubdate * 1000).toLocaleDateString() : undefined,
+      contentType: 'video',
+      metadata: {
+        viewCount: parseCount(item.play),
+        commentCount: parseCount(item.video_review),
+        favoriteCount: parseCount(item.favorites),
+        likeCount: parseCount(item.like),
+        coinCount: parseCount(item.coin),
+        duration: item.duration,
+      },
+    }));
+  } catch (err) {
+    console.error('Bilibili search error:', err);
+    return [];
+  }
 }
 
 function detectPlatformFromUrl(url) {
   if (!url) return 'website';
-  if (url.includes('baidu.com')) return 'baidu';
-  if (url.includes('google.com')) return 'google';
-  if (url.includes('bilibili.com')) return 'bilibili';
-  if (url.includes('zhihu.com')) return 'zhihu';
-  if (url.includes('bing.com')) return 'bing';
+  const lower = url.toLowerCase();
+  if (lower.includes('baidu.com')) return 'baidu';
+  if (lower.includes('google.com') || lower.includes('google.cn')) return 'google';
+  if (lower.includes('bilibili.com')) return 'bilibili';
+  if (lower.includes('zhihu.com')) return 'zhihu';
+  if (lower.includes('bing.com')) return 'bing';
+  if (lower.includes('youtube.com') || lower.includes('youtu.be')) return 'youtube';
+  if (lower.includes('douyin.com') || lower.includes('tiktok.com')) return 'douyin';
+  if (lower.includes('weibo.com') || lower.includes('weibo.cn')) return 'weibo';
+  if (lower.includes('xiaohongshu.com') || lower.includes('xhs.com')) return 'xiaohongshu';
+  if (lower.includes('twitter.com') || lower.includes('x.com')) return 'twitter';
   return 'website';
 }
 
@@ -251,15 +326,68 @@ function detectContentType(url, title) {
   const lowerUrl = url.toLowerCase();
   const lowerTitle = (title || '').toLowerCase();
 
-  if (lowerUrl.includes('video') || lowerUrl.includes('watch') ||
-      lowerTitle.includes('video') || lowerTitle.includes('视频')) {
+  if (lowerUrl.includes('/video/') || lowerUrl.includes('/watch?') ||
+      lowerUrl.includes('v.qq.com') || lowerUrl.includes('iqiyi.com') ||
+      lowerTitle.includes('视频') || lowerTitle.includes('直播')) {
     return 'video';
   }
-  if (lowerUrl.includes('image') || lowerUrl.includes('photo') ||
-      lowerTitle.includes('image') || lowerTitle.includes('图片')) {
-    return 'image';
+  if (lowerUrl.includes('.pdf') || lowerUrl.includes('/doc/') ||
+      lowerUrl.includes('wenku.baidu.com')) {
+    return 'document';
   }
   return 'article';
+}
+
+// Aggregate search for all platforms
+async function aggregateSearch(query, platforms) {
+  const results = [];
+  const errors = [];
+
+  // 并行搜索所有平台
+  const searchPromises = platforms.map(async (platform) => {
+    try {
+      let platformResults = [];
+
+      switch (platform) {
+        case 'baidu':
+        case 'google':
+        case 'bing':
+          platformResults = await searchViaSerpApi(platform, query);
+          break;
+        case 'bilibili':
+          platformResults = await searchBilibili(query);
+          break;
+        case 'zhihu':
+          // 知乎使用Google site搜索
+          platformResults = await searchViaSerpApi('google', `${query} site:zhihu.com`);
+          platformResults = platformResults.filter(r => r.url.includes('zhihu.com'));
+          platformResults.forEach(r => {
+            r.platform = 'zhihu';
+            r.contentType = detectContentType(r.url, r.title);
+          });
+          break;
+        default:
+          console.warn(`Unknown platform: ${platform}`);
+      }
+
+      return { platform, results: platformResults, error: null };
+    } catch (err) {
+      console.error(`${platform} search error:`, err);
+      return { platform, results: [], error: err.message };
+    }
+  });
+
+  const searchResults = await Promise.all(searchPromises);
+
+  for (const sr of searchResults) {
+    if (sr.error) {
+      errors.push({ platform: sr.platform, error: sr.error });
+    } else {
+      results.push(...sr.results);
+    }
+  }
+
+  return { results, errors };
 }
 
 // Search endpoint
@@ -271,8 +399,8 @@ app.post('/api/search', async (req, res) => {
       return res.status(400).json({ error: 'Invalid request' });
     }
 
-    const results = await searchViaBing(query, platforms);
-    res.json({ results });
+    const { results, errors } = await aggregateSearch(query, platforms);
+    res.json({ results, errors });
   } catch (err) {
     console.error('Search error:', err);
     res.status(500).json({ error: err.message || 'Search failed' });
