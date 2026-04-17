@@ -205,8 +205,8 @@ app.delete('/api/bookmarks', async (req, res) => {
 });
 
 // SerpAPI search for baidu, google, bing, zhihu
-async function searchViaSerpApi(engine, query) {
-  const SERPAPI_KEY = process.env.SERPAPI_KEY;
+async function searchViaSerpApi(engine, query, userApiKey) {
+  const SERPAPI_KEY = userApiKey || process.env.SERPAPI_KEY;
   if (!SERPAPI_KEY) {
     throw new Error('SERPAPI_KEY not configured');
   }
@@ -339,7 +339,7 @@ function detectContentType(url, title) {
 }
 
 // Aggregate search for all platforms
-async function aggregateSearch(query, platforms) {
+async function aggregateSearch(query, platforms, userApiKey) {
   const results = [];
   const errors = [];
 
@@ -352,14 +352,14 @@ async function aggregateSearch(query, platforms) {
         case 'baidu':
         case 'google':
         case 'bing':
-          platformResults = await searchViaSerpApi(platform, query);
+          platformResults = await searchViaSerpApi(platform, query, userApiKey);
           break;
         case 'bilibili':
           platformResults = await searchBilibili(query);
           break;
         case 'zhihu':
           // 知乎使用Google site搜索
-          platformResults = await searchViaSerpApi('google', `${query} site:zhihu.com`);
+          platformResults = await searchViaSerpApi('google', `${query} site:zhihu.com`, userApiKey);
           platformResults = platformResults.filter(r => r.url.includes('zhihu.com'));
           platformResults.forEach(r => {
             r.platform = 'zhihu';
@@ -393,13 +393,13 @@ async function aggregateSearch(query, platforms) {
 // Search endpoint
 app.post('/api/search', async (req, res) => {
   try {
-    const { query, platforms } = req.body;
+    const { query, platforms, apiKey } = req.body;
 
     if (!query || !platforms || !Array.isArray(platforms)) {
       return res.status(400).json({ error: 'Invalid request' });
     }
 
-    const { results, errors } = await aggregateSearch(query, platforms);
+    const { results, errors } = await aggregateSearch(query, platforms, apiKey);
     res.json({ results, errors });
   } catch (err) {
     console.error('Search error:', err);
