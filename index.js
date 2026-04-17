@@ -101,15 +101,15 @@ app.post('/api/register', async (req, res) => {
     const userId = crypto.randomUUID();
     const passwordHash = await hashPassword(password);
 
-    await db.execute({
+    const insertResult = await db.execute({
       sql: 'INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)',
       args: [userId, email, passwordHash]
     });
 
-    res.json({ success: true, userId });
+    res.json({ success: true, userId, insertResult });
   } catch (err) {
     console.error('Register error:', err);
-    res.status(500).json({ error: '注册失败' });
+    res.status(500).json({ error: '注册失败: ' + err.message });
   }
 });
 
