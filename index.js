@@ -147,12 +147,15 @@ app.get('/api/bookmarks/:userId', async (req, res) => {
     const { userId } = req.params;
 
     const result = await db.execute({
-      sql: 'SELECT result_id FROM bookmarks WHERE user_id = ?',
+      sql: 'SELECT result_id, result_data FROM bookmarks WHERE user_id = ? ORDER BY created_at DESC',
       args: [userId]
     });
 
-    const bookmarkIds = result.rows.map(row => row.result_id);
-    res.json({ bookmarks: bookmarkIds });
+    const bookmarks = result.rows.map(row => ({
+      id: row.result_id,
+      data: JSON.parse(row.result_data)
+    }));
+    res.json({ bookmarks });
   } catch (err) {
     console.error('Get bookmarks error:', err);
     res.status(500).json({ error: '获取收藏失败' });
