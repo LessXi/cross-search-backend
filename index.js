@@ -1,6 +1,7 @@
 const express = require('express');
 const { createClient } = require('@libsql/client');
 const cors = require('cors');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -13,18 +14,13 @@ const db = createClient({
   authToken: process.env.TURSO_AUTH_TOKEN || '',
 });
 
-// Simple password hashing (in production, use bcrypt)
-async function hashPassword(password) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password + 'cross-search-salt');
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+// Simple password hashing
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(password + 'cross-search-salt').digest('hex');
 }
 
-async function verifyPassword(password, hash) {
-  const passwordHash = await hashPassword(password);
-  return passwordHash === hash;
+function verifyPassword(password, hash) {
+  return hashPassword(password) === hash;
 }
 
 // Initialize database tables
