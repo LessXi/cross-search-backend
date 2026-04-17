@@ -204,6 +204,81 @@ app.delete('/api/bookmarks', async (req, res) => {
   }
 });
 
+// Bing search via SerpAPI
+async function searchViaBing(query, platforms) {
+  const SERPAPI_KEY = process.env.SERPAPI_KEY;
+  if (!SERPAPI_KEY) {
+    throw new Error('SERPAPI_KEY not configured');
+  }
+
+  const results = [];
+  for (const platform of platforms) {
+    try {
+      const engine = platform === 'bing' ? 'bing' : 'bing';
+      const response = await fetch(`https://serpapi.com/search?q=${encodeURIComponent(query)}&engine=${engine}&api_key=${SERPAPI_KEY}`);
+      const data = await response.json();
+
+      if (data.organic_results) {
+        for (const item of data.organic_results) {
+          results.push({
+            title: item.title || '',
+            url: item.link || '',
+            snippet: item.snippet || '',
+            platform: platform,
+            type: detectContentType(item.link || '', item.title || ''),
+          });
+        }
+      }
+    } catch (err) {
+      console.error(`Bing search error for ${platform}:`, err);
+    }
+  }
+  return results;
+}
+
+function detectPlatformFromUrl(url) {
+  if (!url) return 'website';
+  if (url.includes('baidu.com')) return 'baidu';
+  if (url.includes('google.com')) return 'google';
+  if (url.includes('bilibili.com')) return 'bilibili';
+  if (url.includes('zhihu.com')) return 'zhihu';
+  if (url.includes('bing.com')) return 'bing';
+  return 'website';
+}
+
+function detectContentType(url, title) {
+  if (!url) return 'article';
+  const lowerUrl = url.toLowerCase();
+  const lowerTitle = (title || '').toLowerCase();
+
+  if (lowerUrl.includes('video') || lowerUrl.includes('watch') ||
+      lowerTitle.includes('video') || lowerTitle.includes('视频')) {
+    return 'video';
+  }
+  if (lowerUrl.includes('image') || lowerUrl.includes('photo') ||
+      lowerTitle.includes('image') || lowerTitle.includes('图片')) {
+    return 'image';
+  }
+  return 'article';
+}
+
+// Search endpoint
+app.post('/api/search', async (req, res) => {
+  try {
+    const { query, platforms } = req.body;
+
+    if (!query || !platforms || !Array.isArray(platforms)) {
+      return res.status(400).json({ error: 'Invalid request' });
+    }
+
+    const results = await searchViaBing(query, platforms);
+    res.json({ results });
+  } catch (err) {
+    console.error('Search error:', err);
+    res.status(500).json({ error: err.message || 'Search failed' });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 initDb().then(() => {
   app.listen(PORT, () => {
