@@ -1,0 +1,9 @@
+{
+  "build": {
+    "command": "echo 'No build needed'",
+    "builder": "nixpacks"
+  },
+  "deploy": {
+    "startCommand": "node index.js"
+  }
+}
