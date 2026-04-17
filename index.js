@@ -59,6 +59,16 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// Debug: check database connection
+app.get('/api/debug', async (req, res) => {
+  try {
+    const result = await db.execute('SELECT 1 as test');
+    res.json({ db: 'connected', result });
+  } catch (err) {
+    res.json({ db: 'error', error: err.message });
+  }
+});
+
 // Register
 app.post('/api/register', async (req, res) => {
   try {
