@@ -93,3 +93,7 @@ Body: { "query": "关键词", "platforms": ["baidu", "google", "bing", "bilibili
 ## 部署
 
 已配置 Railway 部署，无需额外配置。
+
+## 相关项目
+
+[Cross-Search 聚合搜索](https://github.com/LessXi/cross-search-extension) - Chrome 扩展前端
