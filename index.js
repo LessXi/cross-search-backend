@@ -256,6 +256,43 @@ async function searchViaSerpApi(engine, query, userApiKey) {
   }
 }
 
+// Tavily search
+async function searchViaTavily(query, userApiKey) {
+  const TAVILY_KEY = userApiKey || process.env.TAVILY_API_KEY;
+  if (!TAVILY_KEY) {
+    throw new Error('TAVILY_API_KEY not configured');
+  }
+
+  try {
+    const response = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: TAVILY_KEY,
+        query,
+        max_results: 20,
+        search_depth: 'basic',
+      }),
+    });
+    const data = await response.json();
+
+    if (!data.results || !Array.isArray(data.results)) return [];
+
+    return data.results.map(item => ({
+      platform: detectPlatformFromUrl(item.url) || 'website',
+      title: item.title || '无标题',
+      description: item.content || '暂无描述',
+      author: item.url || '未知来源',
+      cover: '/placeholder.svg',
+      url: item.url || '',
+      contentType: detectContentType(item.url || '', item.title || ''),
+    }));
+  } catch (err) {
+    console.error('Tavily search error:', err);
+    return [];
+  }
+}
+
 // Bilibili direct API search
 async function searchBilibili(query) {
   try {
@@ -365,6 +402,9 @@ async function aggregateSearch(query, platforms, userApiKey) {
             r.platform = 'zhihu';
             r.contentType = detectContentType(r.url, r.title);
           });
+          break;
+        case 'tavily':
+          platformResults = await searchViaTavily(query, userApiKey);
           break;
         default:
           console.warn(`Unknown platform: ${platform}`);
