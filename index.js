@@ -376,9 +376,12 @@ function detectContentType(url, title) {
 }
 
 // Aggregate search for all platforms
-async function aggregateSearch(query, platforms, userApiKey) {
+async function aggregateSearch(query, platforms, userApiKey, tavilyApiKey) {
   const results = [];
   const errors = [];
+
+  // 自动路由：如果有 tavilyApiKey，优先使用 Tavily 代替 SerpAPI
+  const useTavily = !!tavilyApiKey;
 
   // 并行搜索所有平台
   const searchPromises = platforms.map(async (platform) => {
@@ -389,22 +392,34 @@ async function aggregateSearch(query, platforms, userApiKey) {
         case 'baidu':
         case 'google':
         case 'bing':
-          platformResults = await searchViaSerpApi(platform, query, userApiKey);
+          if (useTavily) {
+            platformResults = await searchViaTavily(query, tavilyApiKey);
+          } else {
+            platformResults = await searchViaSerpApi(platform, query, userApiKey);
+          }
           break;
         case 'bilibili':
           platformResults = await searchBilibili(query);
           break;
         case 'zhihu':
-          // 知乎使用Google site搜索
-          platformResults = await searchViaSerpApi('google', `${query} site:zhihu.com`, userApiKey);
-          platformResults = platformResults.filter(r => r.url.includes('zhihu.com'));
-          platformResults.forEach(r => {
-            r.platform = 'zhihu';
-            r.contentType = detectContentType(r.url, r.title);
-          });
+          if (useTavily) {
+            platformResults = await searchViaTavily(query, tavilyApiKey);
+            platformResults = platformResults.filter(r => r.url.includes('zhihu.com'));
+            platformResults.forEach(r => {
+              r.platform = 'zhihu';
+              r.contentType = detectContentType(r.url, r.title);
+            });
+          } else {
+            platformResults = await searchViaSerpApi('google', `${query} site:zhihu.com`, userApiKey);
+            platformResults = platformResults.filter(r => r.url.includes('zhihu.com'));
+            platformResults.forEach(r => {
+              r.platform = 'zhihu';
+              r.contentType = detectContentType(r.url, r.title);
+            });
+          }
           break;
         case 'tavily':
-          platformResults = await searchViaTavily(query, userApiKey);
+          platformResults = await searchViaTavily(query, tavilyApiKey);
           break;
         default:
           console.warn(`Unknown platform: ${platform}`);
@@ -433,13 +448,13 @@ async function aggregateSearch(query, platforms, userApiKey) {
 // Search endpoint
 app.post('/api/search', async (req, res) => {
   try {
-    const { query, platforms, apiKey } = req.body;
+    const { query, platforms, apiKey, tavilyApiKey } = req.body;
 
     if (!query || !platforms || !Array.isArray(platforms)) {
       return res.status(400).json({ error: 'Invalid request' });
     }
 
-    const { results, errors } = await aggregateSearch(query, platforms, apiKey);
+    const { results, errors } = await aggregateSearch(query, platforms, apiKey, tavilyApiKey);
     res.json({ results, errors });
   } catch (err) {
     console.error('Search error:', err);
